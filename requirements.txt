@@ -1,0 +1,16 @@
+# Core
+python-dotenv>=1.0
+certifi
+requests
+
+# MCP (pin below 2.0: mcp 2.x removed mcp.server.fastmcp)
+mcp<2
+langchain-mcp-adapters>=0.3
+uv                       # provides `uvx`, which launches the AviationStack MCP server
+
+# LangGraph + OpenAI LLM
+langgraph>=1.0
+langgraph-checkpoint-postgres>=3.0
+psycopg[binary]>=3.2
+langchain-core>=1.0
+langchain-openai>=1.0
