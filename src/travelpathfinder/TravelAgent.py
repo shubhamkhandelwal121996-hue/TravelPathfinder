@@ -35,9 +35,8 @@ from .Mcp_client import (
 
 logger = logging.getLogger(__name__)
 
-# --------------------------------------------------------------------------- #
-# Settings
-# --------------------------------------------------------------------------- #
+# -------------------------------Settings-------------------------------------------- #
+
 APP_NAME = os.getenv("APP_NAME", "TripMate AI")
 MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 MAX_CONTEXT_CHARS = 6000            # cap on each tool result copied into later prompts
@@ -68,9 +67,7 @@ def get_database_url() -> str:
     return database_url
 
 
-# --------------------------------------------------------------------------- #
-# Structured output: the supervisor returns validated objects, not free-form JSON
-# --------------------------------------------------------------------------- #
+# ---------------------------------Structured output------------------------------------------ #
 AgentName = Literal[
     "flight_agent", "hotel_agent", "weather_agent", "budget_agent", "itinerary_agent"
 ]
@@ -111,9 +108,8 @@ class SupervisorDecision(BaseModel):
 
 supervisor_llm = llm.with_structured_output(SupervisorDecision)
 
-# --------------------------------------------------------------------------- #
-# State
-# --------------------------------------------------------------------------- #
+# ------------------------------State--------------------------------------------- #
+
 def _add_calls(current: int | None, update: int | None) -> int:
     """Counter reducer so parallel agents can each add their own LLM calls.
 
@@ -156,9 +152,8 @@ AGENT_ORDER = ["flight_agent", "hotel_agent", "weather_agent", "budget_agent", "
 RESEARCH_AGENTS = ("flight_agent", "hotel_agent", "weather_agent")  # independent, so parallel
 
 
-# --------------------------------------------------------------------------- #
-# Helpers
-# --------------------------------------------------------------------------- #
+# -------------------------------Helpers-------------------------------------------- #
+
 def _ask(system_prompt: str, user_prompt: str) -> str:
     response = llm.invoke(
         [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
@@ -199,9 +194,8 @@ def _context(state: TravelState, sections: tuple[str, ...]) -> str:
     return "\n\n".join(parts)
 
 
-# --------------------------------------------------------------------------- #
-# Supervisor: guardrail + routing in one structured call
-# --------------------------------------------------------------------------- #
+# -------------------------------------Supervisor-------------------------------------- #
+
 SUPERVISOR_PROMPT = """You are the supervisor of a multi-agent travel-planning system. Do two things.
 
 1. Guardrail. Set guardrail.allowed to true if the request belongs to travel planning or
@@ -289,9 +283,8 @@ def guardrail_blocked_agent(state: TravelState):
     return {"final_response": reason, "messages": [AIMessage(content=reason)]}
 
 
-# --------------------------------------------------------------------------- #
-# Flight agent
-# --------------------------------------------------------------------------- #
+# --------------------------------------Flight agent------------------------------------- #
+
 FLIGHT_AGENT_PROMPT = """You are a travel flight expert.
 
 User Query:
@@ -361,9 +354,8 @@ def flight_agent(state: TravelState):
     return {"flight_results": flight_data, "llm_calls": calls}
 
 
-# --------------------------------------------------------------------------- #
-# Hotel agent
-# --------------------------------------------------------------------------- #
+# ---------------------------------Hotel agent------------------------------------------ #
+
 def hotel_agent(state: TravelState):
     try:
         hotel_results = str(asyncio.run(tavily_mcp_search(f"Best hotels for {state['user_query']}")))
@@ -378,9 +370,8 @@ def hotel_agent(state: TravelState):
     return {"hotel_results": hotel_results}  # no LLM call happens here
 
 
-# --------------------------------------------------------------------------- #
-# Weather agent
-# --------------------------------------------------------------------------- #
+# ----------------------------------Weather agent----------------------------------------- #
+
 async def _fetch_weather(city: str) -> tuple[Any, Any]:
     return await asyncio.gather(weather_mcp_search(city), forecast_mcp_search(city))
 
@@ -420,9 +411,8 @@ def weather_agent(state: TravelState):
     return {"weather_results": weather_results, "llm_calls": calls}
 
 
-# --------------------------------------------------------------------------- #
-# Budget, itinerary, approval, final
-# --------------------------------------------------------------------------- #
+# -----------------------------------Budget, itinerary, approval, final---------------------------------------- #
+
 def budget_agent(state: TravelState):
     prompt = (
         "Analyze whether this trip is realistic for the user's budget.\n\n"
@@ -519,9 +509,8 @@ Important:
     return {"final_response": response.content, "messages": [response], "llm_calls": 1}
 
 
-# --------------------------------------------------------------------------- #
-# Routing
-# --------------------------------------------------------------------------- #
+# ------------------------------------Routing--------------------------------------- #
+
 def _selected_agents(state: TravelState) -> list[str]:
     selected = state.get("selected_agents", [])
     return [agent for agent in AGENT_ORDER if agent in selected]
@@ -544,9 +533,8 @@ def route_after_research(state: TravelState) -> str:
     return "budget_agent" if "budget_agent" in _selected_agents(state) else "itinerary_agent"
 
 
-# --------------------------------------------------------------------------- #
-# Graph
-# --------------------------------------------------------------------------- #
+# ---------------------------------------Graph------------------------------------ #
+
 graph = StateGraph(TravelState)
 
 graph.add_node("supervisor", supervisor_agent)
@@ -578,9 +566,8 @@ graph.add_edge("final_agent", END)
 graph.add_edge("guardrail_blocked", END)
 
 
-# --------------------------------------------------------------------------- #
-# PostgreSQL checkpointer on a connection pool
-# --------------------------------------------------------------------------- #
+# ------------------------------------PostgreSQL checkpointer on a connection pool--------------------------------------- #
+
 def _build_checkpointer() -> PostgresSaver:
     # One shared connection is not safe once agents run in parallel threads
     # and several requests arrive together; a pool hands each its own.
@@ -599,9 +586,8 @@ checkpointer = _build_checkpointer()
 travel_graph = graph.compile(checkpointer=checkpointer)
 
 
-# --------------------------------------------------------------------------- #
-# FastAPI-facing helpers (same names and response shape as before)
-# --------------------------------------------------------------------------- #
+# ---------------------------------FastAPI-facing helpers------------------------------------------ #
+
 def _interrupt_payload(result: dict[str, Any]) -> dict[str, Any] | None:
     interrupts = result.get("__interrupt__", [])
     if not interrupts:
